@@ -50,7 +50,6 @@ ufw allow in "Apache Full"
 apt-get update -y
 apt install -y mysql-server
 apt install -y php libapache2-mod-php php-mysql
-apt install mysql-server
 apt-get install -y python3-pip apache2 libapache2-mod-wsgi-py3
 apt-get install -y libmysqlclient-dev
 echo "PHP Lib have been successfully installed."
