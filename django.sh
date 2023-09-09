@@ -7,17 +7,17 @@ if [ "$EUID" -ne 0 ]; then
 fi
 
 #Variables
-NAME = "" # Desired directory and file names(preferably project name in lowercase without spaces or special characters)
-USERNAME = ""  # Change this to your desired username
-PASSWORD = ""  # Change this to your desired password
-GIT_CLONE_LINK = "" # GitHub repo (Name should match with $NAME)
-DOMAIN = "" # domain name without https and www e.g. google.com
-DOT_ENV = ("") #content of your .env file
-ADMIN_EMAIL = ""
-DATABASE_NAME = ""
-DATABASE_USER = ""
-DATABASE_USER_PASSWORD = ""
-DATABASE_PASSWORD = ""
+NAME="" # Desired directory and file names(preferably project name in lowercase without spaces or special characters)
+USERNAME=""  # Change this to your desired username
+PASSWORD=""  # Change this to your desired password
+GIT_CLONE_LINK="" # GitHub repo (Name should match with $NAME)
+DOMAIN="" # domain name without https and www e.g. google.com
+DOT_ENV=("
+") #content of your .env file
+ADMIN_EMAIL=""
+DATABASE_NAME=""
+DATABASE_USER=""
+DATABASE_USER_PASSWORD=""
 
 sudo apt-get update -y
 sudo apt-get upgrade -y
@@ -40,7 +40,7 @@ echo "User $USERNAME has been created with password: $PASSWORD"
 ufw allow OpenSSH
 
 # Enable the firewall
-ufw enable
+echo "y" | ufw enable
 
 apt install -y apache2
 echo "Apache2 has been successfully installed."
@@ -58,18 +58,20 @@ echo "PHP Lib have been successfully installed."
 #MYSQL SETUP
 mysql -e \
 "CREATE DATABASE $DATABASE_NAME;"
-mysql -e \
-"CREATE USER '$DATABASE_USER'@'localhost' IDENTIFIED WITH authentication_plugin BY '$DATABASE_USER_PASSWORD';"
-mysql -e \
-"GRANT ALL PRIVILEGES ON *.* TO '$DATABASE_USER'@'localhost' WITH GRANT OPTION;"
 mysql -Bse \
 "ALTER USER 'root'@'localhost' IDENTIFIED WITH mysql_native_password BY '$DATABASE_USER_PASSWORD';FLUSH PRIVILEGES;"
 mysql -sfu root "-p$DATABASE_USER_PASSWORD" < "django.sql"
+mysql -sfu root "-p$DATABASE_USER_PASSWORD" -e \
+"CREATE USER '$DATABASE_USER'@'localhost' IDENTIFIED BY '$DATABASE_USER_PASSWORD';"
+mysql -sfu root "-p$DATABASE_USER_PASSWORD" -e \
+"GRANT ALL PRIVILEGES ON *.* TO '$DATABASE_USER'@'localhost' WITH GRANT OPTION;"
+mysql -sfu root "-p$DATABASE_USER_PASSWORD" -e \
+"FLUSH PRIVILEGES;"
 #MYSQL SETUP
 echo "Database Setup Sucessful"
 
 sudo chown -R $USERNAME /var/www
-git clone "$GIT_CLONE_LINK" "/var/www/" 
+git clone "$GIT_CLONE_LINK" "/var/www/$NAME" 
 echo "Git Clone Sucessful"
 echo "$DOT_ENV" > "/var/www/$NAME/.env"
 
@@ -80,13 +82,15 @@ pip3 install virtualenv
 # Create the virtual environment
 virtualenv env
 # Activate the virtual environment
-source myenv/bin/activate
+source env/bin/activate
 pip install -r requirements.txt
 ./manage.py migrate
 ./manage.py collectstatic --noinput
 DJANGO_SUPERUSER_PASSWORD=$PASSWORD python manage.py createsuperuser --username $USERNAME --email $USERNAME --noinput
 
 systemctl restart apache2
+sleep 2
+
 
 echo "Django Config Done"
 
@@ -115,10 +119,10 @@ PRE_CERT=("
 
         ErrorLog ${APACHE_LOG_DIR}/error.log
         CustomLog ${APACHE_LOG_DIR}/access.log combined
-RewriteEngine on
-RewriteCond %{SERVER_NAME} =$DOMAIN [OR]
-RewriteCond %{SERVER_NAME} =www.$DOMAIN
-RewriteRule ^ https://%{SERVER_NAME}%{REQUEST_URI} [END,NE,R=permanent]
+#RewriteEngine on
+#RewriteCond %{SERVER_NAME} =$DOMAIN [OR]
+#RewriteCond %{SERVER_NAME} =www.$DOMAIN
+#RewriteRule ^ https://%{SERVER_NAME}%{REQUEST_URI} [END,NE,R=permanent]
 </VirtualHost>
 ")
 # Create the Apache Config file with the specified content
@@ -127,16 +131,17 @@ echo "$PRE_CERT" > "/etc/apache2/sites-available/$NAME.conf"
 a2ensite $NAME.conf
 # Reload Apache to apply the changes
 systemctl reload apache2
+sleep 2
 echo "Site $SITE_NAME has been enabled."
 
 echo "Start CertBot"
 apt install -y certbot python3-certbot-apache
-certbot certonly --non-interactive --agree-tos -m $ADMIN_EMAIL -d $DOMAIN -d www.$DOMAIN 
+certbot certonly --non-interactive --agree-tos -m $ADMIN_EMAIL -d $DOMAIN -d www.$DOMAIN --webroot -w /var/www/$NAME/
 # Optionally, automatically renew the certificate (add this to a cron job)
 certbot renew --dry-run
 echo "Certbot installed and configured successfully."
 systemctl reload apache2
-
+sleep 2
 
 NEW_PRE_CERT=("
 <VirtualHost *:80>
@@ -162,16 +167,16 @@ NEW_PRE_CERT=("
 
         ErrorLog ${APACHE_LOG_DIR}/error.log
         CustomLog ${APACHE_LOG_DIR}/access.log combined
-RewriteEngine on
-RewriteCond %{SERVER_NAME} =$DOMAIN [OR]
-RewriteCond %{SERVER_NAME} =www.$DOMAIN
-RewriteRule ^ https://%{SERVER_NAME}%{REQUEST_URI} [END,NE,R=permanent]
+#RewriteEngine on
+#RewriteCond %{SERVER_NAME} =$DOMAIN [OR]
+#RewriteCond %{SERVER_NAME} =www.$DOMAIN
+#RewriteRule ^ https://%{SERVER_NAME}%{REQUEST_URI} [END,NE,R=permanent]
 </VirtualHost>
 ")
 # Create the Apache Config file with the specified content
 echo "$NEW_PRE_CERT" > "/etc/apache2/sites-available/$NAME.conf"
 
-POST_CERT = ("
+POST_CERT=("
 <IfModule mod_ssl.c>
 <VirtualHost *:443>
         ServerAdmin $ADMIN_EMAIL
@@ -203,6 +208,7 @@ SSLCertificateKeyFile /etc/letsencrypt/live/$DOMAIN/privkey.pem
 ")
 echo "$POST_CERT" > "/etc/apache2/sites-available/$NAME-le-ssl.conf"
 systemctl reload apache2
+sleep 2
 echo "Website is Now Accessible"
 sudo apt-get autoremove -y
 sudo apt-get clean
